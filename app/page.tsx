@@ -8,6 +8,7 @@ import {
   ChevronDown,
   Heart,
   Home as HomeIcon,
+  Share2,
   Menu,
   MessageCircle,
   ShieldCheck,
@@ -1312,16 +1313,86 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
         © 2026 FISIOLU · Fisioterapia Suelo Pélvico
       </footer>
 
-      {/* WHATSAPP FLOTANTE */}
-      <a
-        href={whatsapp}
-        target="_blank"
-        rel="noopener noreferrer"
-        aria-label="Escribir por WhatsApp"
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-green-500 text-white shadow-2xl transition hover:scale-110"
-      >
-        <MessageCircle size={28} />
-      </a>
+      {/* REDES SOCIALES FLOTANTES */}
+      <div className="fixed bottom-6 right-5 z-50 flex flex-col items-end gap-3 sm:right-6">
+        <div className="mb-1 hidden items-center gap-2 rounded-full border border-slate-200 bg-white/95 px-4 py-2 text-xs font-bold text-slate-600 shadow-lg backdrop-blur sm:flex">
+          <Share2 size={15} className="text-purple-500" />
+          Síguenos
+        </div>
+
+        <a
+          href="https://www.instagram.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Instagram de FISIOLU"
+          className="group flex items-center justify-end"
+        >
+          <span className="mr-2 hidden translate-x-3 rounded-full bg-white px-3 py-2 text-sm font-bold text-slate-700 opacity-0 shadow-lg transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100 sm:block">
+            Instagram
+          </span>
+
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 via-pink-500 to-orange-400 text-white shadow-xl transition duration-300 group-hover:-translate-y-1 group-hover:scale-110">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-[22px] w-[22px]"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="5" />
+              <circle cx="12" cy="12" r="4" />
+              <circle
+                cx="17.5"
+                cy="6.5"
+                r="1"
+                fill="currentColor"
+                stroke="none"
+              />
+            </svg>
+          </span>
+        </a>
+
+        <a
+          href="https://www.facebook.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Facebook de FISIOLU"
+          className="group flex items-center justify-end"
+        >
+          <span className="mr-2 hidden translate-x-3 rounded-full bg-white px-3 py-2 text-sm font-bold text-slate-700 opacity-0 shadow-lg transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100 sm:block">
+            Facebook
+          </span>
+
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-600 text-white shadow-xl transition duration-300 group-hover:-translate-y-1 group-hover:scale-110">
+            <span className="text-2xl font-black leading-none">f</span>
+          </span>
+        </a>
+
+        <a
+          href="https://www.youtube.com/"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="YouTube de FISIOLU"
+          className="group flex items-center justify-end"
+        >
+          <span className="mr-2 hidden translate-x-3 rounded-full bg-white px-3 py-2 text-sm font-bold text-slate-700 opacity-0 shadow-lg transition-all duration-300 group-hover:translate-x-0 group-hover:opacity-100 sm:block">
+            YouTube
+          </span>
+
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600 text-white shadow-xl transition duration-300 group-hover:-translate-y-1 group-hover:scale-110">
+            <svg
+              viewBox="0 0 24 24"
+              className="h-[23px] w-[23px]"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M23 12s0-3.6-.46-5.33a2.96 2.96 0 0 0-2.08-2.09C18.73 4.12 12 4.12 12 4.12s-6.73 0-8.46.46a2.96 2.96 0 0 0-2.08 2.09C1 8.4 1 12 1 12s0 3.6.46 5.33a2.96 2.96 0 0 0 2.08 2.09c1.73.46 8.46.46 8.46.46s6.73 0 8.46-.46a2.96 2.96 0 0 0 2.08-2.09C23 15.6 23 12 23 12Z" />
+              <path d="m10 15.5 5.2-3.5L10 8.5v7Z" fill="white" />
+            </svg>
+          </span>
+        </a>
+      </div>
     </main>
   );
 }
