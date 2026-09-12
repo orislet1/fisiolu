@@ -16,10 +16,14 @@ import {
   X,
 } from "lucide-react";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function Home() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
+
   const [form, setForm] = useState({
     tipoPaciente: "",
     nombre: "",
@@ -71,37 +75,133 @@ export default function Home() {
     });
   };
   
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-  
-    const mensajeWhatsApp = `
-  Hola Milagros 👋
-  
-  Quisiera solicitar una cita de fisioterapia.
-  
-  Tipo de atención: ${form.tipoPaciente}
-  Nombre: ${form.nombre}
-  Teléfono: ${form.telefono}
-  Distrito / zona: ${form.distrito}
-  Dirección: ${form.direccion}
-  Área de atención: ${form.area}${form.area === "Embarazo" ? `
-  Semanas de embarazo: ${form.semanas}` : ""}
-  Servicio: ${form.servicio}
-  Motivo: ${form.motivo}
-  Fecha preferida: ${form.fecha}
-  Hora preferida: ${form.hora}
-  
-  Mensaje:
-  ${form.mensaje || "Sin mensaje adicional"}
-  `;
-  
-    const url = `https://wa.me/56976956928?text=${encodeURIComponent(
-      mensajeWhatsApp
-    )}`;
-  
-    window.open(url, "_blank");
-  };
+  useEffect(() => {
+    if (!form.fecha) {
+      setAvailableSlots([]);
+      setAvailabilityError("");
+      return;
+    }
 
+    const controller = new AbortController();
+
+    const loadAvailability = async () => {
+      try {
+        setLoadingSlots(true);
+        setAvailabilityError("");
+
+        // Si cambia la fecha, la hora elegida anteriormente deja de ser válida.
+        setForm((current) => ({
+          ...current,
+          hora: "",
+        }));
+
+        const response = await fetch(
+          `/api/availability?date=${encodeURIComponent(form.fecha)}`,
+          { signal: controller.signal }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok || !data.ok) {
+          throw new Error("No se pudo consultar la disponibilidad");
+        }
+
+        const available = (data.slots ?? [])
+          .filter(
+            (slot: { time: string; available: boolean }) => slot.available
+          )
+          .map((slot: { time: string }) => slot.time);
+
+        setAvailableSlots(available);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        console.error("Error consultando disponibilidad:", error);
+        setAvailableSlots([]);
+        setAvailabilityError(
+          "No pudimos consultar los horarios. Intenta nuevamente."
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoadingSlots(false);
+        }
+      }
+    };
+
+    loadAvailability();
+
+    return () => controller.abort();
+  }, [form.fecha]);
+
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  try {
+    const response = await fetch("/api/book", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        nombre: form.nombre,
+        telefono: form.telefono,
+        distrito: form.distrito,
+        direccion: form.direccion,
+        area: form.area,
+        semanas: form.semanas,
+        servicio: form.servicio,
+        motivo: form.motivo,
+        fecha: form.fecha,
+        hora: form.hora,
+        mensaje: form.mensaje,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      alert(
+        data.message ||
+          "No se pudo crear la reserva. Intenta nuevamente."
+      );
+      return;
+    }
+
+    const texto = `
+Hola, quiero confirmar mi reserva en FISIOLU.
+
+Tipo: ${form.tipoPaciente}
+Área: ${form.area}
+${form.area === "Embarazo" ? `Semanas de embarazo: ${form.semanas}\n` : ""}
+Servicio: ${form.servicio}
+Motivo: ${form.motivo}
+
+Nombre: ${form.nombre}
+WhatsApp: ${form.telefono}
+Distrito / Zona: ${form.distrito}
+Dirección: ${form.direccion}
+
+Fecha: ${form.fecha}
+Hora: ${form.hora}
+
+${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
+    `.trim();
+
+    const whatsappUrl = `https://wa.me/56976956928?text=${encodeURIComponent(
+      texto
+    )}`;
+
+    window.open(whatsappUrl, "_blank");
+  } catch (error) {
+    console.error("Error al reservar:", error);
+
+    alert(
+      "Ocurrió un error al crear la reserva. Intenta nuevamente."
+    );
+  }
+};
   const whatsapp =
     "https://wa.me/56976956928?text=Hola%20Milagros,%20quisiera%20agendar%20una%20cita.";
 
@@ -271,31 +371,20 @@ export default function Home() {
       >
         <div className="mx-auto grid max-w-7xl items-center gap-14 px-6 py-16 lg:min-h-[760px] lg:grid-cols-2 lg:px-8">
           <div>
-            <p className="text-2xl font-semibold italic text-purple-500 md:text-3xl">
-              Bienestar para ti,
-              <br />
-              bienestar para tu bebé ♡
+            <p className="font-bold uppercase tracking-[0.28em] text-purple-500">
+              Salud pélvica, vida sin límites
             </p>
 
-            <h1 className="mt-6 text-5xl font-black tracking-tight text-teal-600 sm:text-6xl lg:text-7xl">
-              FISIOTERAPIA
+            <h1 className="mt-5 text-5xl font-black tracking-tight sm:text-6xl lg:text-7xl">
+              <span className="block text-teal-600">FISIOTERAPIA</span>
+              <span className="mt-1 block text-purple-500">
+                DE SUELO PÉLVICO
+              </span>
             </h1>
 
-            <p className="mt-1 text-4xl font-bold italic text-purple-500 md:text-5xl">
-              a domicilio
-            </p>
-
-            <div className="mt-7 inline-flex items-center gap-2 rounded-full bg-teal-600 px-6 py-3 font-bold uppercase text-white">
-              <Heart size={18} />
-              Para mujeres embarazadas
-            </div>
-
-            <p className="mt-7 max-w-xl text-lg leading-8 text-slate-600">
-              Cuidado{" "}
-              <span className="font-bold text-purple-500">especializado</span>{" "}
-              en la comodidad de tu hogar, durante{" "}
-              <span className="font-bold text-purple-500">cada etapa</span>{" "}
-              de tu embarazo.
+            <p className="mt-6 max-w-xl text-xl font-medium leading-8 text-slate-700 md:text-2xl">
+              Recupera tu bienestar, confianza y calidad de vida desde la
+              comodidad de tu hogar.
             </p>
 
             <div className="mt-9 flex flex-col gap-4 sm:flex-row">
@@ -303,24 +392,33 @@ export default function Home() {
                 href="#agendar"
                 className="inline-flex items-center justify-center gap-2 rounded-full bg-teal-600 px-7 py-4 font-semibold text-white shadow-lg shadow-teal-200 transition hover:-translate-y-1 hover:bg-teal-700"
               >
+                <CalendarDays size={18} />
                 Agenda tu evaluación
                 <ChevronRight size={18} />
               </a>
             </div>
 
-            <div className="mt-9 grid gap-3 text-sm text-slate-600 sm:grid-cols-3">
-              <span className="flex items-center gap-2">
-              <HomeIcon size={17} className="text-teal-600" />
-                Atención a domicilio
-              </span>
-              <span className="flex items-center gap-2">
-                <ShieldCheck size={17} className="text-teal-600" />
-                Atención profesional
-              </span>
-              <span className="flex items-center gap-2">
-                <Heart size={17} className="text-teal-600" />
-                Atención personalizada
-              </span>
+            <div className="mt-10 grid gap-4 text-sm text-slate-700 sm:grid-cols-3">
+              <div className="flex flex-col items-start gap-2 sm:items-center sm:text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-100 text-teal-700">
+                  <HomeIcon size={22} />
+                </span>
+                <span className="font-medium">Atención a domicilio</span>
+              </div>
+
+              <div className="flex flex-col items-start gap-2 sm:items-center sm:text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-100 text-purple-700">
+                  <ShieldCheck size={22} />
+                </span>
+                <span className="font-medium">Atención profesional</span>
+              </div>
+
+              <div className="flex flex-col items-start gap-2 sm:items-center sm:text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-full bg-teal-100 text-teal-700">
+                  <Heart size={22} />
+                </span>
+                <span className="font-medium">Tratamiento personalizado</span>
+              </div>
             </div>
           </div>
 
@@ -338,13 +436,28 @@ export default function Home() {
                 priority
               />
 
-              <div className="absolute bottom-7 left-7 right-7 rounded-3xl bg-white/90 p-5 shadow-xl backdrop-blur">
-                <p className="text-2xl font-bold italic text-purple-500">
-                  Milagros Caicedo
+              <div className="absolute left-7 top-8 max-w-[70%] rounded-3xl bg-white/88 px-5 py-4 shadow-lg backdrop-blur">
+                <p className="text-xl font-semibold italic leading-7 text-purple-500 md:text-2xl">
+                  “Tu salud pélvica también importa ♡”
                 </p>
-                <p className="mt-1 text-xs font-bold uppercase tracking-wide text-teal-600 md:text-sm">
-                  Fisioterapeuta especialista en suelo pélvico
-                </p>
+              </div>
+
+              <div className="absolute bottom-7 left-7 right-7 rounded-3xl bg-white/92 p-5 shadow-xl backdrop-blur">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-2xl font-bold italic text-purple-500">
+                      Milagros Caicedo
+                    </p>
+                    <p className="mt-1 text-xs font-bold uppercase tracking-wide text-teal-600 md:text-sm">
+                      Fisioterapeuta especialista en suelo pélvico
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                    <ShieldCheck size={20} className="shrink-0 text-teal-600" />
+                    <span>Atención profesional, cercana y en tu hogar</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -386,61 +499,96 @@ export default function Home() {
         </div>
       </section>
 
-      {/* BENEFICIOS */}
+      {/* TU ATENCIÓN, PASO A PASO */}
       <section
         id="beneficios"
         className="scroll-mt-28 bg-gradient-to-br from-teal-50 to-purple-50 px-6 py-24"
       >
-        <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-2">
-          <div className="rounded-[2.5rem] bg-white p-9 shadow-xl shadow-slate-200/40">
-            <h2 className="text-3xl font-bold text-teal-700">
-              Preparación para el parto ♡
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-12 text-center">
+            <p className="font-bold uppercase tracking-[0.25em] text-purple-500">
+              Así funciona FISIOLU
+            </p>
+
+            <h2 className="mt-3 text-4xl font-black text-teal-700 md:text-5xl">
+              Tu atención, paso a paso
             </h2>
 
-            <ul className="mt-7 space-y-4">
-              {[
-                "Ejercicios de respiración y relajación",
-                "Movilidad y estiramientos seguros",
-                "Fortalecimiento del suelo pélvico",
-                "Técnicas para el manejo del dolor",
-                "Preparación física y emocional",
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-3">
-                  <span className="rounded-full bg-teal-100 p-1 text-teal-700">
-                    <Check size={15} />
-                  </span>
-                  {item}
-                </li>
-              ))}
-            </ul>
-
-            <p className="mt-8 text-xl font-semibold italic text-purple-500">
-              Llega a tu parto más fuerte, con confianza y sin miedo.
+            <p className="mx-auto mt-5 max-w-2xl text-lg leading-8 text-slate-600">
+              Un proceso personalizado desde la primera evaluación hasta tus
+              sesiones de tratamiento.
             </p>
           </div>
 
-          <div className="rounded-[2.5rem] bg-white p-9 shadow-xl shadow-slate-200/40">
-            <h2 className="text-3xl font-bold text-teal-700">
-              Beneficios
-            </h2>
+          <div className="grid gap-8 lg:grid-cols-2">
+            <div className="rounded-[2.5rem] bg-white p-9 shadow-xl shadow-slate-200/40">
+              <h3 className="text-3xl font-bold text-teal-700">
+                Tu primera atención ♡
+              </h3>
 
-            <ul className="mt-7 space-y-4">
-              {[
-                "Alivio del dolor y tensión muscular",
-                "Mejora de la postura y movilidad",
-                "Prevención de complicaciones",
-                "Bienestar físico y emocional",
-                "Atención personalizada y segura",
-                "Comodidad y privacidad en tu hogar",
-              ].map((item) => (
-                <li key={item} className="flex items-center gap-3">
-                  <span className="rounded-full bg-purple-100 p-1 text-purple-700">
-                    <Check size={15} />
-                  </span>
-                  {item}
-                </li>
-              ))}
-            </ul>
+              <div className="mt-7 space-y-6">
+                {[
+                  [
+                    "1",
+                    "Evaluación en tu domicilio",
+                    "Milagros evalúa tu caso, tus síntomas y lo que necesitas.",
+                  ],
+                  [
+                    "2",
+                    "Plan personalizado",
+                    "Se define el tratamiento más adecuado y la frecuencia recomendada.",
+                  ],
+                  [
+                    "3",
+                    "Comienza tu recuperación",
+                    "Si necesitas tratamiento, puedes continuar con sesiones de 1 hora.",
+                  ],
+                ].map(([number, title, text]) => (
+                  <div key={number} className="flex gap-4">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-100 font-bold text-teal-700">
+                      {number}
+                    </span>
+
+                    <div>
+                      <p className="font-bold text-slate-800">{title}</p>
+                      <p className="mt-1 leading-7 text-slate-600">{text}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-8 rounded-2xl bg-teal-50 px-5 py-4 text-center font-bold text-teal-700">
+                Evaluación inicial a domicilio · S/120
+              </div>
+            </div>
+
+            <div className="rounded-[2.5rem] bg-white p-9 shadow-xl shadow-slate-200/40">
+              <h3 className="text-3xl font-bold text-teal-700">
+                ¿Por qué FISIOLU?
+              </h3>
+
+              <ul className="mt-7 space-y-4">
+                {[
+                  "Especialización en suelo pélvico",
+                  "Atención femenina y masculina",
+                  "Embarazo y recuperación postparto",
+                  "Abordaje de condiciones neurológicas",
+                  "Atención privada en tu domicilio",
+                  "Tratamiento adaptado a cada paciente",
+                ].map((item) => (
+                  <li key={item} className="flex items-center gap-3">
+                    <span className="rounded-full bg-purple-100 p-1 text-purple-700">
+                      <Check size={15} />
+                    </span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+
+              <div className="mt-8 rounded-2xl bg-purple-50 px-5 py-4 text-center font-bold text-purple-700">
+                Sesiones de tratamiento · 1 hora · S/170
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -504,53 +652,191 @@ export default function Home() {
 </section>
 
       {/* TESTIMONIOS */}
-      <section id="testimonios" className="scroll-mt-28 bg-slate-50 px-6 py-24">
-        <div className="mx-auto max-w-6xl">
+      <section
+        id="testimonios"
+        className="scroll-mt-28 overflow-hidden bg-gradient-to-br from-slate-50 via-white to-purple-50 px-6 py-24"
+      >
+        <div className="mx-auto max-w-7xl">
           <div className="mb-12 text-center">
             <p className="font-bold uppercase tracking-[0.25em] text-purple-500">
               Experiencias
             </p>
-            <h2 className="mt-3 text-4xl font-black text-teal-700">
+
+            <h2 className="mt-3 text-4xl font-black text-teal-700 md:text-5xl">
               Lo que dicen mis pacientes
             </h2>
+
+            <p className="mx-auto mt-4 max-w-2xl text-lg leading-8 text-slate-600">
+              Historias de personas que han mejorado su bienestar y calidad de vida
+              con FISIOLU.
+            </p>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-3">
-            {[
-              [
-                "Milagros me ayudó muchísimo con el dolor de espalda en mi embarazo. Las sesiones fueron muy cómodas.",
-                "Camila R.",
-              ],
-              [
-                "Gracias a su preparación para el parto me sentí segura y confiada durante todo el proceso.",
-                "Valentina M.",
-              ],
-              [
-                "Después del parto me ayudó con mi recuperación y ejercicios. Me sentí muy acompañada.",
-                "Daniela T.",
-              ],
-            ].map(([text, name]) => (
-              <article
-                key={name}
-                className="rounded-3xl bg-white p-7 shadow-lg shadow-slate-200/40"
-              >
-                <div className="flex gap-1 text-amber-400">
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <Star key={n} size={18} fill="currentColor" />
-                  ))}
-                </div>
+          <div className="relative">
+            <div className="testimonial-track flex w-max gap-6">
+              {[
+                {
+                  name: "Camila R.",
+                  area: "Incontinencia urinaria",
+                  text: "Milagros me ayudó a mejorar muchísimo la incontinencia urinaria. Hoy me siento con más seguridad y confianza en mi vida diaria.",
+                },
+                {
+                  name: "Valentina M.",
+                  area: "Dolor pélvico",
+                  text: "Llegué con dolor pélvico y desde las primeras sesiones sentí alivio. La atención en casa hizo todo mucho más cómodo.",
+                },
+                {
+                  name: "Daniela T.",
+                  area: "Recuperación postparto",
+                  text: "Después del parto me ayudó a recuperar fuerza y control del suelo pélvico. Me sentí acompañada durante todo el proceso.",
+                },
+                {
+                  name: "Andrea S.",
+                  area: "Dispareunia",
+                  text: "Las sesiones me ayudaron muchísimo con el dolor durante las relaciones. Todo fue explicado con mucha claridad y respeto.",
+                },
+                {
+                  name: "María P.",
+                  area: "Vejiga hiperactiva",
+                  text: "Tenía urgencia urinaria y ahora puedo hacer mis actividades con mucha más tranquilidad. Estoy muy agradecida.",
+                },
+                {
+                  name: "Lucía G.",
+                  area: "Prolapso",
+                  text: "Aprendí a entender mejor mi cuerpo y a manejar los síntomas del prolapso con ejercicios adaptados a mi caso.",
+                },
+                {
+                  name: "Fernanda C.",
+                  area: "Dolor de coxis",
+                  text: "Tenía dolor al sentarme durante meses. Con el tratamiento fui mejorando y recuperé mucha comodidad en mi día a día.",
+                },
+                {
+                  name: "Paola V.",
+                  area: "Hipertonía del suelo pélvico",
+                  text: "Me ayudó a relajar y controlar mejor el suelo pélvico. La atención fue cercana, profesional y muy personalizada.",
+                },
+                {
+                  name: "Sofía L.",
+                  area: "Recuperación de cesárea",
+                  text: "Me orientó con mi recuperación y la cicatriz de cesárea. Sentí mucha confianza desde la primera evaluación.",
+                },
+                {
+                  name: "Carolina N.",
+                  area: "Dolor lumbopélvico",
+                  text: "El tratamiento fue muy completo. Mejoré el dolor y entendí cómo trabajar mejor mi postura y mi zona pélvica.",
+                },
+                {
+                  name: "Camila R.",
+                  area: "Incontinencia urinaria",
+                  text: "Milagros me ayudó a mejorar muchísimo la incontinencia urinaria. Hoy me siento con más seguridad y confianza en mi vida diaria.",
+                },
+                {
+                  name: "Valentina M.",
+                  area: "Dolor pélvico",
+                  text: "Llegué con dolor pélvico y desde las primeras sesiones sentí alivio. La atención en casa hizo todo mucho más cómodo.",
+                },
+                {
+                  name: "Daniela T.",
+                  area: "Recuperación postparto",
+                  text: "Después del parto me ayudó a recuperar fuerza y control del suelo pélvico. Me sentí acompañada durante todo el proceso.",
+                },
+                {
+                  name: "Andrea S.",
+                  area: "Dispareunia",
+                  text: "Las sesiones me ayudaron muchísimo con el dolor durante las relaciones. Todo fue explicado con mucha claridad y respeto.",
+                },
+                {
+                  name: "María P.",
+                  area: "Vejiga hiperactiva",
+                  text: "Tenía urgencia urinaria y ahora puedo hacer mis actividades con mucha más tranquilidad. Estoy muy agradecida.",
+                },
+                {
+                  name: "Lucía G.",
+                  area: "Prolapso",
+                  text: "Aprendí a entender mejor mi cuerpo y a manejar los síntomas del prolapso con ejercicios adaptados a mi caso.",
+                },
+                {
+                  name: "Fernanda C.",
+                  area: "Dolor de coxis",
+                  text: "Tenía dolor al sentarme durante meses. Con el tratamiento fui mejorando y recuperé mucha comodidad en mi día a día.",
+                },
+                {
+                  name: "Paola V.",
+                  area: "Hipertonía del suelo pélvico",
+                  text: "Me ayudó a relajar y controlar mejor el suelo pélvico. La atención fue cercana, profesional y muy personalizada.",
+                },
+                {
+                  name: "Sofía L.",
+                  area: "Recuperación de cesárea",
+                  text: "Me orientó con mi recuperación y la cicatriz de cesárea. Sentí mucha confianza desde la primera evaluación.",
+                },
+                {
+                  name: "Carolina N.",
+                  area: "Dolor lumbopélvico",
+                  text: "El tratamiento fue muy completo. Mejoré el dolor y entendí cómo trabajar mejor mi postura y mi zona pélvica.",
+                },
+              ].map((item, index) => (
+                <article
+                  key={`${item.name}-${index}`}
+                  className="w-[320px] shrink-0 rounded-[2rem] border border-slate-100 bg-white p-7 shadow-xl shadow-slate-200/50"
+                >
+                  <div className="flex gap-1 text-amber-400">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <Star key={n} size={18} fill="currentColor" />
+                    ))}
+                  </div>
 
-                <p className="mt-5 leading-7 text-slate-600">
-                  “{text}”
-                </p>
+                  <p className="mt-5 min-h-[150px] leading-7 text-slate-600">
+                    “{item.text}”
+                  </p>
 
-                <p className="mt-5 font-bold text-teal-700">
-                  — {name}
-                </p>
-              </article>
-            ))}
+                  <div className="mt-6 border-t border-slate-100 pt-5">
+                    <p className="font-bold text-teal-700">{item.name}</p>
+                    <p className="mt-1 text-sm font-medium text-purple-500">
+                      {item.area}
+                    </p>
+                  </div>
+                </article>
+              ))}
+            </div>
           </div>
+
+          <p className="mt-10 text-center text-sm text-slate-400">
+            Los testimonios se desplazan automáticamente.
+          </p>
         </div>
+
+        <style jsx>{`
+          .testimonial-track {
+            animation: testimonial-scroll 55s linear infinite;
+          }
+
+          .testimonial-track:hover {
+            animation-play-state: paused;
+          }
+
+          @keyframes testimonial-scroll {
+            from {
+              transform: translateX(0);
+            }
+
+            to {
+              transform: translateX(calc(-50% - 12px));
+            }
+          }
+
+          @media (max-width: 768px) {
+            .testimonial-track {
+              animation-duration: 70s;
+            }
+          }
+
+          @media (prefers-reduced-motion: reduce) {
+            .testimonial-track {
+              animation: none;
+            }
+          }
+        `}</style>
       </section>
 
       {/* CONTACTO */}
@@ -742,24 +1028,45 @@ export default function Home() {
               </div>
 
               <div>
-                <label
-                  htmlFor="distrito"
-                  className="mb-2 block text-sm font-semibold text-slate-700"
-                >
-                  Distrito / Zona
-                </label>
+  <label className="mb-2 block text-sm font-semibold text-slate-700">
+    Distrito / Zona
+  </label>
 
-                <input
-                  id="distrito"
-                  name="distrito"
-                  type="text"
-                  required
-                  value={form.distrito}
-                  onChange={handleChange}
-                  placeholder="Ej. Miraflores, Surco, San Miguel..."
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
-                />
-              </div>
+  <div className="relative">
+    <select
+      name="distrito"
+      required
+      value={form.distrito}
+      onChange={handleChange}
+      className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-4 pr-12 text-slate-700 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
+    >
+      <option value="" disabled>
+        Selecciona tu distrito
+      </option>
+
+      <option value="San Juan de Miraflores">
+        San Juan de Miraflores
+      </option>
+
+      <option value="Chorrillos">Chorrillos</option>
+      <option value="Barranco">Barranco</option>
+      <option value="Miraflores">Miraflores</option>
+      <option value="Surco">Surco</option>
+      <option value="Surquillo">Surquillo</option>
+      <option value="San Borja">San Borja</option>
+      <option value="San Luis">San Luis</option>
+    </select>
+
+    <ChevronDown
+      size={20}
+      className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
+    />
+  </div>
+
+  <p className="mt-2 text-sm text-slate-500">
+    Atención a domicilio disponible únicamente en estos distritos.
+  </p>
+</div>
 
               <div>
                 <label
@@ -871,15 +1178,61 @@ export default function Home() {
                   Hora preferida
                 </label>
 
-                <input
-                  id="hora"
-                  name="hora"
-                  type="time"
-                  required
-                  value={form.hora}
-                  onChange={handleChange}
-                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
-                />
+                <div className="relative">
+                  <select
+                    id="hora"
+                    name="hora"
+                    required
+                    value={form.hora}
+                    onChange={handleChange}
+                    disabled={!form.fecha || loadingSlots}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-14 outline-none transition disabled:cursor-not-allowed disabled:bg-slate-50 disabled:text-slate-400 focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
+                  >
+                    {!form.fecha && (
+                      <option value="">Primero selecciona una fecha</option>
+                    )}
+
+                    {form.fecha && loadingSlots && (
+                      <option value="">Consultando horarios...</option>
+                    )}
+
+                    {form.fecha && !loadingSlots && availabilityError && (
+                      <option value="">No se pudieron cargar los horarios</option>
+                    )}
+
+                    {form.fecha &&
+                      !loadingSlots &&
+                      !availabilityError &&
+                      availableSlots.length === 0 && (
+                        <option value="">No hay horarios disponibles</option>
+                      )}
+
+                    {form.fecha &&
+                      !loadingSlots &&
+                      !availabilityError &&
+                      availableSlots.length > 0 && (
+                        <>
+                          <option value="">Selecciona una hora disponible</option>
+                          {availableSlots.map((time) => (
+                            <option key={time} value={time}>
+                              {time}
+                            </option>
+                          ))}
+                        </>
+                      )}
+                  </select>
+
+                  <ChevronDown
+                    size={18}
+                    className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-slate-700"
+                  />
+                </div>
+
+                {availabilityError && (
+                  <p className="mt-2 text-xs font-medium text-red-500">
+                    {availabilityError}
+                  </p>
+                )}
               </div>
 
               <div className="md:col-span-2">
