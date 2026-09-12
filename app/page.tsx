@@ -24,13 +24,24 @@ export default function Home() {
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [availabilityError, setAvailabilityError] = useState("");
+  const [todayLima, setTodayLima] = useState("");
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [bookingSuccess, setBookingSuccess] = useState<{
+    fecha: string;
+    hora: string;
+    correo: string;
+  } | null>(null);
+  const [returnCountdown, setReturnCountdown] = useState(8);
 
   const [form, setForm] = useState({
     tipoPaciente: "",
     nombre: "",
     telefono: "",
+    correo: "",
     distrito: "",
     direccion: "",
+    referencia: "",
     area: "",
     semanas: "",
     servicio: "",
@@ -43,7 +54,19 @@ export default function Home() {
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
   ) => {
-    const { name, value } = e.target;
+    const { name } = e.target;
+    let value = e.target.value;
+
+    if (name === "telefono") {
+      value = value.replace(/\D/g, "").slice(0, 15);
+    }
+
+    if (name === "nombre") {
+      value = value
+        .replace(/[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]/g, "")
+        .replace(/\s{2,}/g, " ")
+        .slice(0, 80);
+    }
 
     if (name === "tipoPaciente") {
       setForm({
@@ -75,7 +98,31 @@ export default function Home() {
       [name]: value,
     });
   };
-  
+
+  const handleBlur = (
+    e: React.FocusEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+  ) => {
+    setTouched((current) => ({
+      ...current,
+      [e.target.name]: true,
+    }));
+  };
+
+  useEffect(() => {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Lima",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(new Date());
+
+    const year = parts.find((part) => part.type === "year")?.value ?? "";
+    const month = parts.find((part) => part.type === "month")?.value ?? "";
+    const day = parts.find((part) => part.type === "day")?.value ?? "";
+
+    setTodayLima(`${year}-${month}-${day}`);
+  }, []);
+
   useEffect(() => {
     if (!form.fecha) {
       setAvailableSlots([]);
@@ -136,27 +183,237 @@ export default function Home() {
     return () => controller.abort();
   }, [form.fecha]);
 
+
+  const obtenerErrorCorreo = (valor: string) => {
+    const correo = valor.trim().toLowerCase();
+
+    if (!correo) {
+      return "Ingresa tu correo electrónico.";
+    }
+
+    const formatoValido =
+      /^[^\s@]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/i.test(
+        correo
+      );
+
+    if (!formatoValido) {
+      return "Revisa tu correo. Ejemplo: nombre@gmail.com";
+    }
+
+    const dominio = correo.split("@")[1];
+
+    const dominiosConError: Record<string, string> = {
+      "gmail.cm": "gmail.com",
+      "gmail.con": "gmail.com",
+      "gmail.co": "gmail.com",
+      "gmial.com": "gmail.com",
+      "gmai.com": "gmail.com",
+      "gmal.com": "gmail.com",
+      "hotmial.com": "hotmail.com",
+      "hotmail.con": "hotmail.com",
+      "hotmail.cm": "hotmail.com",
+      "outlok.com": "outlook.com",
+      "outllok.com": "outlook.com",
+      "outlook.con": "outlook.com",
+      "yahoo.con": "yahoo.com",
+      "yahoo.cm": "yahoo.com",
+      "icloud.con": "icloud.com",
+      "icloud.cm": "icloud.com",
+      "protonmail.con": "protonmail.com",
+      "proton.me.com": "proton.me",
+    };
+
+    if (dominiosConError[dominio]) {
+      return `Revisa el correo. ¿Quisiste escribir ${dominiosConError[dominio]}?`;
+    }
+
+    const extension = dominio.split(".").pop() ?? "";
+
+    if (!/^[a-z]{2,24}$/i.test(extension)) {
+      return "Revisa la terminación del correo, por ejemplo .com, .cl o .pe.";
+    }
+
+    return "";
+  };
+
+  const correoError = obtenerErrorCorreo(form.correo);
+
+  const nombreValido =
+    form.nombre.trim().length >= 5 &&
+    /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+(?:[ '-][A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)+$/.test(
+      form.nombre.trim()
+    );
+  const telefonoValido = /^\d{9,15}$/.test(form.telefono);
+  const correoValido = correoError === "";
+  const direccionValida = form.direccion.trim().length >= 5;
+  const referenciaValida = form.referencia.trim().length >= 3;
+  const semanasValidas =
+    form.area !== "Embarazo" ||
+    (Number.isInteger(Number(form.semanas)) &&
+      Number(form.semanas) >= 1 &&
+      Number(form.semanas) <= 42);
+  const fechaValida =
+    Boolean(form.fecha) && (!todayLima || form.fecha >= todayLima);
+  // La hora ya proviene del selector de horarios disponibles.
+  // Para habilitar el botón basta con que el paciente haya elegido una.
+  // El servidor vuelve a comprobar la disponibilidad antes de crear la reserva.
+  const horaValida = Boolean(form.hora);
+  const mensajeValido = form.mensaje.trim().length >= 10;
+
+  const formularioValido =
+    Boolean(form.tipoPaciente) &&
+    Boolean(form.area) &&
+    nombreValido &&
+    telefonoValido &&
+    correoValido &&
+    direccionValida &&
+    Boolean(form.distrito) &&
+    referenciaValida &&
+    semanasValidas &&
+    Boolean(form.motivo) &&
+    fechaValida &&
+    horaValida &&
+    mensajeValido;
+
+  const camposPendientes = [
+    !form.tipoPaciente ? "tipo de paciente" : null,
+    !form.area ? "tipo de atención" : null,
+    !nombreValido ? "nombre y apellido" : null,
+    !telefonoValido ? "WhatsApp" : null,
+    !correoValido ? "correo electrónico" : null,
+    !direccionValida ? "dirección" : null,
+    !form.distrito ? "distrito / zona" : null,
+    !referenciaValida ? "referencia de ubicación" : null,
+    !semanasValidas ? "semanas de embarazo" : null,
+    !form.motivo ? "motivo de la evaluación" : null,
+    !fechaValida ? "fecha" : null,
+    !horaValida ? "hora" : null,
+    !mensajeValido ? "mensaje adicional" : null,
+  ].filter(Boolean) as string[];
+
 const handleSubmit = async (e: React.FormEvent) => {
   e.preventDefault();
 
+  const nombre = form.nombre.trim();
+  const telefono = form.telefono.trim();
+  const correo = form.correo.trim();
+  const direccion = form.direccion.trim();
+  const referencia = form.referencia.trim();
+  const mensaje = form.mensaje.trim();
+
+  const telefonoSoloNumeros = telefono.replace(/\D/g, "");
+  const errorCorreoSubmit = obtenerErrorCorreo(correo);
+  const correoValido = errorCorreoSubmit === "";
+
+  if (!form.tipoPaciente) {
+    alert("Selecciona si es tu primera atención o si ya eres paciente.");
+    return;
+  }
+
+  if (!form.area) {
+    alert("Selecciona el tipo de atención que necesitas.");
+    return;
+  }
+
+  if (nombre.length < 5) {
+    alert("Ingresa tu nombre y apellido completos.");
+    return;
+  }
+
+  if (telefonoSoloNumeros.length < 9 || telefonoSoloNumeros.length > 15) {
+    alert("Ingresa un número de WhatsApp válido.");
+    return;
+  }
+
+  if (!correoValido) {
+    alert(errorCorreoSubmit);
+    return;
+  }
+
+  if (direccion.length < 5) {
+    alert("Ingresa la dirección completa donde deseas recibir la atención.");
+    return;
+  }
+
+  if (!form.distrito) {
+    alert("Selecciona tu distrito o zona.");
+    return;
+  }
+
+  if (referencia.length < 3) {
+    alert("Ingresa una referencia de ubicación para facilitar la llegada al domicilio.");
+    return;
+  }
+
+  if (form.area === "Embarazo") {
+    const semanas = Number(form.semanas);
+
+    if (!Number.isInteger(semanas) || semanas < 1 || semanas > 42) {
+      alert("Ingresa una cantidad válida de semanas de embarazo, entre 1 y 42.");
+      return;
+    }
+  }
+
+  if (!form.motivo) {
+    alert(
+      form.tipoPaciente === "Primera atención - Evaluación S/120"
+        ? "Selecciona el motivo de tu evaluación."
+        : "Selecciona el motivo de tu sesión."
+    );
+    return;
+  }
+
+  if (!form.fecha) {
+    alert("Selecciona una fecha para tu atención.");
+    return;
+  }
+
+  if (todayLima && form.fecha < todayLima) {
+    alert("No puedes reservar una fecha anterior al día de hoy.");
+    return;
+  }
+
+  if (!form.hora) {
+    alert("Selecciona una hora disponible.");
+    return;
+  }
+
+  if (!availableSlots.includes(form.hora)) {
+    alert("Ese horario ya no está disponible. Selecciona otro horario.");
+    return;
+  }
+
+  if (mensaje.length < 10) {
+    alert(
+      "Cuéntanos un poco más sobre lo que estás sintiendo. Escribe al menos 10 caracteres."
+    );
+    return;
+  }
+
   try {
+    setIsSubmitting(true);
+    setBookingSuccess(null);
+
     const response = await fetch("/api/book", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        nombre: form.nombre,
-        telefono: form.telefono,
+        tipoPaciente: form.tipoPaciente,
+        nombre,
+        telefono,
+        correo,
         distrito: form.distrito,
-        direccion: form.direccion,
+        direccion,
+        referencia,
         area: form.area,
         semanas: form.semanas,
         servicio: form.servicio,
         motivo: form.motivo,
         fecha: form.fecha,
         hora: form.hora,
-        mensaje: form.mensaje,
+        mensaje,
       }),
     });
 
@@ -170,39 +427,66 @@ const handleSubmit = async (e: React.FormEvent) => {
       return;
     }
 
-    const texto = `
-Hola, quiero confirmar mi reserva en FISIOLU.
-
-Tipo: ${form.tipoPaciente}
-Área: ${form.area}
-${form.area === "Embarazo" ? `Semanas de embarazo: ${form.semanas}\n` : ""}
-Servicio: ${form.servicio}
-Motivo: ${form.motivo}
-
-Nombre: ${form.nombre}
-WhatsApp: ${form.telefono}
-Distrito / Zona: ${form.distrito}
-Dirección: ${form.direccion}
-
-Fecha: ${form.fecha}
-Hora: ${form.hora}
-
-${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
-    `.trim();
-
-    const whatsappUrl = `https://wa.me/56976956928?text=${encodeURIComponent(
-      texto
-    )}`;
-
-    window.open(whatsappUrl, "_blank");
+    setReturnCountdown(8);
+    setBookingSuccess({
+      fecha: form.fecha,
+      hora: form.hora,
+      correo,
+    });
   } catch (error) {
     console.error("Error al reservar:", error);
 
     alert(
       "Ocurrió un error al crear la reserva. Intenta nuevamente."
     );
+  } finally {
+    setIsSubmitting(false);
   }
 };
+
+  const volverAlInicio = () => {
+    setBookingSuccess(null);
+    setReturnCountdown(8);
+    setTouched({});
+    setAvailableSlots([]);
+    setAvailabilityError("");
+    setForm({
+      tipoPaciente: "",
+      nombre: "",
+      telefono: "",
+      correo: "",
+      distrito: "",
+      direccion: "",
+      referencia: "",
+      area: "",
+      semanas: "",
+      servicio: "",
+      motivo: "",
+      fecha: "",
+      hora: "",
+      mensaje: "",
+    });
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    if (!bookingSuccess) return;
+
+    const interval = window.setInterval(() => {
+      setReturnCountdown((current) => Math.max(current - 1, 0));
+    }, 1000);
+
+    const timeout = window.setTimeout(() => {
+      volverAlInicio();
+    }, 8000);
+
+    return () => {
+      window.clearInterval(interval);
+      window.clearTimeout(timeout);
+    };
+  }, [bookingSuccess]);
+
   const whatsapp =
     "https://wa.me/56976956928?text=Hola%20Milagros,%20quisiera%20agendar%20una%20cita.";
 
@@ -280,6 +564,55 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
       "Otro",
     ],
   };
+
+  if (bookingSuccess) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-teal-50 via-white to-purple-50 px-6 py-12 text-slate-800">
+        <section className="w-full max-w-2xl rounded-[2rem] border border-teal-100 bg-white p-7 text-center shadow-2xl shadow-teal-100/60 sm:p-10">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-teal-600 text-white shadow-lg shadow-teal-200">
+            <Check size={32} />
+          </div>
+
+          <p className="mt-5 text-sm font-bold uppercase tracking-[0.18em] text-teal-600">
+            Reserva registrada
+          </p>
+
+          <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-900 sm:text-4xl">
+            ¡Tu reserva fue confirmada! ♡
+          </h1>
+
+          <p className="mx-auto mt-5 max-w-xl text-base leading-7 text-slate-600">
+            Tu cita ha sido registrada correctamente para el{" "}
+            <strong className="text-slate-900">{bookingSuccess.fecha}</strong> a las{" "}
+            <strong className="text-slate-900">{bookingSuccess.hora}</strong>.
+          </p>
+
+          <div className="mx-auto mt-6 max-w-xl rounded-2xl bg-slate-50 px-5 py-4 text-sm leading-6 text-slate-600">
+            Milagros ya recibió los datos de tu reserva. Cualquier información,
+            confirmación o indicación adicional podrá ser enviada al correo{" "}
+            <strong className="text-slate-800">{bookingSuccess.correo}</strong>.
+            Si fuera necesario, también podrá contactarte al número de WhatsApp que
+            registraste.
+          </div>
+
+          <p className="mt-7 text-sm font-medium text-slate-500">
+            Volviendo al inicio en{" "}
+            <strong className="text-teal-700">{returnCountdown}</strong>{" "}
+            {returnCountdown === 1 ? "segundo" : "segundos"}...
+          </p>
+
+          <button
+            type="button"
+            onClick={volverAlInicio}
+            className="mt-4 inline-flex items-center justify-center gap-2 rounded-full bg-teal-600 px-6 py-3 font-bold text-white shadow-lg shadow-teal-200 transition hover:-translate-y-0.5 hover:bg-teal-700"
+          >
+            Volver al inicio ahora
+            <ChevronRight size={18} />
+          </button>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-white text-slate-800">
@@ -865,10 +1198,10 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
 
             <div className="mt-7 flex flex-wrap items-center justify-center gap-3 text-sm">
               <span className="rounded-full bg-teal-50 px-4 py-2 font-semibold text-teal-700">
-                Evaluación inicial · S/120
+                Evaluación inicial · S/120 Soles
               </span>
               <span className="rounded-full bg-purple-50 px-4 py-2 font-semibold text-purple-700">
-                Sesión · 1 hora · S/170
+                Sesión · 1 hora · S/170 Soles 
               </span>
               <span className="rounded-full bg-slate-100 px-4 py-2 font-semibold text-slate-700">
                 Atención a domicilio
@@ -987,6 +1320,10 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
               </div>
             </div>
 
+            <p className="mb-5 text-center text-sm font-medium text-slate-500">
+              Todos los campos son obligatorios para preparar correctamente tu evaluación.
+            </p>
+
             <div className="grid gap-5 md:grid-cols-2">
               <div>
                 <label
@@ -1001,11 +1338,22 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
                   name="nombre"
                   type="text"
                   required
+                  minLength={5}
+                  maxLength={80}
+                  autoComplete="name"
+                  pattern="[A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+([ '-][A-Za-zÁÉÍÓÚÜÑáéíóúüñ]+)+"
+                  title="Ingresa tu nombre y apellido usando solo letras"
                   value={form.nombre}
                   onChange={handleChange}
+                  onBlur={handleBlur}
                   placeholder="Tu nombre y apellido"
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
                 />
+                {touched.nombre && !nombreValido && (
+                  <p className="mt-2 text-xs font-medium text-red-500">
+                    Ingresa tu nombre y apellido usando solo letras.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -1021,53 +1369,53 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
                   name="telefono"
                   type="tel"
                   required
+                  inputMode="tel"
+                  minLength={9}
+                  maxLength={20}
+                  pattern="[0-9+()\\s-]{9,20}"
+                  title="Ingresa un número de WhatsApp válido"
+                  autoComplete="tel"
                   value={form.telefono}
                   onChange={handleChange}
-                  placeholder="Tu número de WhatsApp"
+                  onBlur={handleBlur}
+                  placeholder="Ej: 987654321"
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
                 />
+                {touched.telefono && !telefonoValido && (
+                  <p className="mt-2 text-xs font-medium text-red-500">
+                    Usa solo números e ingresa entre 9 y 15 dígitos.
+                  </p>
+                )}
               </div>
 
               <div>
-  <label className="mb-2 block text-sm font-semibold text-slate-700">
-    Distrito / Zona
-  </label>
+                <label
+                  htmlFor="correo"
+                  className="mb-2 block text-sm font-semibold text-slate-700"
+                >
+                  Correo electrónico
+                </label>
 
-  <div className="relative">
-    <select
-      name="distrito"
-      required
-      value={form.distrito}
-      onChange={handleChange}
-      className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-4 pr-12 text-slate-700 outline-none transition focus:border-teal-400 focus:ring-4 focus:ring-teal-100"
-    >
-      <option value="" disabled>
-        Selecciona tu distrito
-      </option>
+                <input
+                  id="correo"
+                  name="correo"
+                  type="email"
+                  required
+                  maxLength={120}
+                  autoComplete="email"
+                  value={form.correo}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder="tu@email.com"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
+                />
+                {touched.correo && !correoValido && (
+                  <p className="mt-2 text-xs font-medium text-red-500">
+                    {correoError}
+                  </p>
+                )}
 
-      <option value="San Juan de Miraflores">
-        San Juan de Miraflores
-      </option>
-
-      <option value="Chorrillos">Chorrillos</option>
-      <option value="Barranco">Barranco</option>
-      <option value="Miraflores">Miraflores</option>
-      <option value="Surco">Surco</option>
-      <option value="Surquillo">Surquillo</option>
-      <option value="San Borja">San Borja</option>
-      <option value="San Luis">San Luis</option>
-    </select>
-
-    <ChevronDown
-      size={20}
-      className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-slate-400"
-    />
-  </div>
-
-  <p className="mt-2 text-sm text-slate-500">
-    Atención a domicilio disponible únicamente en estos distritos.
-  </p>
-</div>
+              </div>
 
               <div>
                 <label
@@ -1082,12 +1430,93 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
                   name="direccion"
                   type="text"
                   required
+                  minLength={5}
+                  maxLength={160}
+                  autoComplete="street-address"
                   value={form.direccion}
                   onChange={handleChange}
-                  placeholder="Dirección donde deseas recibir la atención"
+                  onBlur={handleBlur}
+                  placeholder="Dirección dónde deseas recibir la atención"
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
                 />
+                {touched.direccion && !direccionValida && (
+                  <p className="mt-2 text-xs font-medium text-red-500">
+                    Ingresa una dirección completa.
+                  </p>
+                )}
               </div>
+
+              <div>
+                <label
+                  htmlFor="distrito"
+                  className="mb-2 block text-sm font-semibold text-slate-700"
+                >
+                  Distrito / Zona
+                </label>
+
+                <div className="relative">
+                  <select
+                    id="distrito"
+                    name="distrito"
+                    required
+                    value={form.distrito}
+                    onChange={handleChange}
+                    className="w-full appearance-none rounded-2xl border border-slate-200 bg-white px-4 py-3 pr-12 text-slate-700 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
+                  >
+                    <option value="" disabled>Selecciona tu distrito</option>
+                    <option value="San Juan de Miraflores">San Juan de Miraflores</option>
+                    <option value="Chorrillos">Chorrillos</option>
+                    <option value="Barranco">Barranco</option>
+                    <option value="Miraflores">Miraflores</option>
+                    <option value="Surco">Surco</option>
+                    <option value="Surquillo">Surquillo</option>
+                    <option value="San Borja">San Borja</option>
+                    <option value="San Luis">San Luis</option>
+                  </select>
+
+                  <ChevronDown
+                    size={18}
+                    className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-slate-700"
+                  />
+                </div>
+
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  Atención a domicilio únicamente en los distritos indicados.
+                </p>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="referencia"
+                  className="mb-2 block text-sm font-semibold text-slate-700"
+                >
+                  Referencia de ubicación
+                </label>
+
+                <input
+                  id="referencia"
+                  name="referencia"
+                  type="text"
+                  required
+                  minLength={3}
+                  maxLength={160}
+                  value={form.referencia}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  placeholder="Ej: Edificio azul, torre B, piso 5, calles aledañas"
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
+                />
+
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  Ayuda a encontrar el domicilio con mayor facilidad.
+                </p>
+                {touched.referencia && !referenciaValida && (
+                  <p className="mt-2 text-xs font-medium text-red-500">
+                    Escribe una referencia breve para ubicar el domicilio.
+                  </p>
+                )}
+              </div>
+
               {form.area === "Embarazo" && (
                 <div className="md:col-span-2">
                   <label
@@ -1106,9 +1535,15 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
                     required
                     value={form.semanas}
                     onChange={handleChange}
+                    onBlur={handleBlur}
                     placeholder="Ej. 28"
                     className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
                   />
+                  {touched.semanas && !semanasValidas && (
+                    <p className="mt-2 text-xs font-medium text-red-500">
+                      Ingresa un valor entre 1 y 42 semanas.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1165,6 +1600,7 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
                   name="fecha"
                   type="date"
                   required
+                  min={todayLima || undefined}
                   value={form.fecha}
                   onChange={handleChange}
                   className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
@@ -1236,6 +1672,7 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
                 )}
               </div>
 
+
               <div className="md:col-span-2">
                 <label
                   htmlFor="mensaje"
@@ -1248,32 +1685,54 @@ ${form.mensaje ? `Mensaje: ${form.mensaje}` : ""}
                   id="mensaje"
                   name="mensaje"
                   rows={4}
+                  required
+                  minLength={10}
+                  maxLength={1000}
                   value={form.mensaje}
                   onChange={handleChange}
-                  placeholder="Cuéntale brevemente a Milagros qué necesitas..."
+                  onBlur={handleBlur}
+                  placeholder="Cuéntale a Milagros qué estás sintiendo, desde cuándo y qué actividades o movimientos lo empeoran o alivian..."
                   className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none transition focus:border-teal-500 focus:ring-4 focus:ring-teal-100"
                 />
+                {touched.mensaje && !mensajeValido && (
+                  <p className="mt-2 text-xs font-medium text-red-500">
+                    Describe brevemente lo que estás sintiendo (mínimo 10 caracteres).
+                  </p>
+                )}
               </div>
             </div>
 
             <button
               type="submit"
-              className="mt-7 flex w-full items-center justify-center gap-2 rounded-full bg-teal-600 px-7 py-4 font-bold text-white shadow-lg shadow-teal-200 transition hover:-translate-y-1 hover:bg-teal-700"
+              disabled={!formularioValido || isSubmitting}
+              className={`mt-7 flex w-full items-center justify-center gap-2 rounded-full px-7 py-4 font-bold text-white transition ${
+                formularioValido && !isSubmitting
+                  ? "bg-teal-600 shadow-lg shadow-teal-200 hover:-translate-y-1 hover:bg-teal-700"
+                  : "cursor-not-allowed bg-slate-300"
+              }`}
             >
-              <MessageCircle size={20} />
-              Enviar solicitud por WhatsApp
+              <CalendarDays size={20} />
+              {isSubmitting
+                ? "Confirmando reserva..."
+                : formularioValido
+                  ? "Enviar reserva"
+                  : "Completa todos los campos"}
             </button>
 
-            <div className="mt-5 grid gap-3 text-center text-xs leading-5 text-slate-500 sm:grid-cols-2">
-              <p>
-                La solicitud no confirma automáticamente el horario. Milagros
-                revisará la disponibilidad y te responderá por WhatsApp.
-              </p>
-              <p>
-                La cantidad y frecuencia de sesiones se define de forma
-                personalizada después de la evaluación inicial.
-              </p>
-            </div>
+            {!formularioValido && (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm text-amber-800">
+                <strong>Diagnóstico temporal:</strong>{" "}
+                {camposPendientes.length > 0
+                  ? `Falta o no es válido: ${camposPendientes.join(", ")}.`
+                  : "No se detectaron campos pendientes, pero el formulario sigue bloqueado."}
+              </div>
+            )}
+
+            <p className="mt-5 text-center text-xs leading-5 text-slate-500">
+              Tu reserva quedará registrada al confirmar. La cantidad y frecuencia de las sesiones se definirá después de la evaluación inicial.
+            </p>
+
+
           </form>
         </div>
       </section>
